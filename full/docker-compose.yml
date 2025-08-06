@@ -1,0 +1,92 @@
+services:
+  banyandb:
+    image: apache/skywalking-banyandb:latest
+    container_name: banyandb
+    command: standalone
+    ports:
+      - "17912:17912" # gRPC
+      - "17913:17913" # HTTP (optional)
+    networks:
+      - skywalking-net
+
+  oap:
+    image: apache/skywalking-oap-server:10.2.0
+    container_name: oap
+    restart: always
+    environment:
+      SW_STORAGE: banyandb
+      SW_STORAGE_BANYANDB_TARGETS: banyandb:17912
+    depends_on:
+      - banyandb
+    ports:
+      - "11800:11800" # gRPC for agents
+      - "12800:12800" # HTTP REST API
+    networks:
+      - skywalking-net
+
+  ui:
+    image: apache/skywalking-ui:10.2.0
+    container_name: skywalking-ui
+    environment:
+      SW_OAP_ADDRESS: http://oap:12800
+    ports:
+      - "8080:8080"
+    depends_on:
+      - oap
+    networks:
+      - skywalking-net
+
+  python-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: python-app
+    volumes:
+      - ./logs:/logs
+      - ./app.py:/app/app.py
+    working_dir: /app
+    networks:
+      - skywalking-net
+
+  fluent-bit:
+    image: fluent/fluent-bit:2.2
+    container_name: fluent-bit
+    volumes:
+      - ./fluent-bit/fluent-bit.conf:/fluent-bit/etc/fluent-bit.conf
+      - ./logs:/logs:ro
+    depends_on:
+      - python-app
+    networks:
+      - skywalking-net
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:latest
+    container_name: otel-collector
+    volumes:
+      - ./otel-collector-config.yaml:/etc/otel-collector-config.yaml
+    command: ["--config=/etc/otel-collector-config.yaml"]
+    depends_on:
+      - fluent-bit
+      - oap
+    ports:
+      - "4317:4317" # OTLP gRPC
+    networks:
+      - skywalking-net
+
+  ad:
+    build:
+      context: ./
+      dockerfile: ./ad/Dockerfile
+    container_name: ad
+    environment:
+      - AD_PORT=9555
+      - OTEL_JAVA_AGENT_VERSION=1.38.0
+    ports:
+      - "${AD_PORT}"
+    networks:
+      - skywalking-net
+
+networks:
+  skywalking-net:
+    driver: bridge
+

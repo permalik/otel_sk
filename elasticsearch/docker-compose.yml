@@ -1,0 +1,43 @@
+services:
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.19.0
+    container_name: elasticsearch
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+    ports:
+      - "9200:9200"
+    networks:
+      - skywalking-net
+
+  oap:
+    image: apache/skywalking-oap-server:10.2.0
+    container_name: oap
+    restart: always
+    depends_on:
+      - elasticsearch
+    environment:
+      SW_STORAGE: elasticsearch
+      SW_STORAGE_ES_CLUSTER_NODES: elasticsearch:9200
+    ports:
+      - "11800:11800" # gRPC for agents
+      - "12800:12800" # HTTP REST API
+    networks:
+      - skywalking-net
+
+  ui:
+    image: apache/skywalking-ui:10.2.0
+    container_name: skywalking-ui
+    depends_on:
+      - oap
+    environment:
+      SW_OAP_ADDRESS: http://oap:12800
+    ports:
+      - "8080:8080"
+    networks:
+      - skywalking-net
+
+networks:
+  skywalking-net:
+    driver: bridge
+
