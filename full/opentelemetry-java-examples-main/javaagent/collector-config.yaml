@@ -4,16 +4,20 @@ receivers:
       http:
         endpoint: "0.0.0.0:4318"
 exporters:
+  otlp:
+    endpoint: "oap:11800"
+    tls:
+      insecure: true
   debug:
     verbosity: detailed
 service:
   pipelines:
     metrics:
       receivers: [otlp]
-      exporters: [debug]
+      exporters: [otlp, debug]
     traces:
       receivers: [otlp]
-      exporters: [debug]
+      exporters: [otlp, debug]
     logs:
       receivers: [otlp]
-      exporters: [debug]
+      exporters: [otlp, debug]
