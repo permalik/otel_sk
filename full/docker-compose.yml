@@ -8,7 +8,6 @@ services:
       - "17913:17913" # HTTP (optional)
     networks:
       - skywalking-net
-
   oap:
     image: apache/skywalking-oap-server:10.2.0
     container_name: oap
@@ -23,66 +22,76 @@ services:
       - "12800:12800" # HTTP REST API
     networks:
       - skywalking-net
-
   ui:
     image: apache/skywalking-ui:10.2.0
     container_name: skywalking-ui
     environment:
       SW_OAP_ADDRESS: http://oap:12800
     ports:
-      - "8080:8080"
+      - "8081:8080"
     depends_on:
       - oap
     networks:
       - skywalking-net
-
-  python-app:
+  # fluent-bit:
+  #   image: fluent/fluent-bit:2.2
+  #   container_name: fluent-bit
+  #   volumes:
+  #     - ./fluent-bit/fluent-bit.conf:/fluent-bit/etc/fluent-bit.conf
+  #     - ./logs:/logs:ro
+  #   depends_on:
+  #     - python-app
+  #   networks:
+  #     - skywalking-net
+  # otel-collector:
+  #   image: otel/opentelemetry-collector-contrib:latest
+  #   container_name: otel-collector
+  #   volumes:
+  #     - ./otel-collector-config.yaml:/etc/otel-collector-config.yaml
+  #   command: ["--config=/etc/otel-collector-config.yaml"]
+  #   depends_on:
+  #     - fluent-bit
+  #     - oap
+  #   ports:
+  #     - "4317:4317" # OTLP gRPC
+  #   networks:
+  #     - skywalking-net
+  app:
     build:
-      context: .
+      context: ./opentelemetry-java-examples-main/javaagent
       dockerfile: Dockerfile
-    container_name: python-app
-    volumes:
-      - ./logs:/logs
-      - ./app.py:/app/app.py
-    working_dir: /app
-    networks:
-      - skywalking-net
-
-  fluent-bit:
-    image: fluent/fluent-bit:2.2
-    container_name: fluent-bit
-    volumes:
-      - ./fluent-bit/fluent-bit.conf:/fluent-bit/etc/fluent-bit.conf
-      - ./logs:/logs:ro
-    depends_on:
-      - python-app
-    networks:
-      - skywalking-net
-
-  otel-collector:
-    image: otel/opentelemetry-collector-contrib:latest
-    container_name: otel-collector
-    volumes:
-      - ./otel-collector-config.yaml:/etc/otel-collector-config.yaml
-    command: ["--config=/etc/otel-collector-config.yaml"]
-    depends_on:
-      - fluent-bit
-      - oap
-    ports:
-      - "4317:4317" # OTLP gRPC
-    networks:
-      - skywalking-net
-
-  ad:
-    build:
-      context: ./
-      dockerfile: ./ad/Dockerfile
-    container_name: ad
     environment:
-      - AD_PORT=9555
-      - OTEL_JAVA_AGENT_VERSION=1.38.0
+      OTEL_SERVICE_NAME: "agent-example-app"
+      OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: "http://collector:4318/v1/traces"
+      OTEL_EXPORTER_OTLP_METRICS_ENDPOINT: "http://collector:4318/v1/metrics"
+      OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: "http://collector:4318/v1/logs"
+      # Logs are disabled by default
+      OTEL_LOGS_EXPORTER: "otlp"
+      # Optional specify file configuration instead of using environment variable scheme
+      # To use, call "export OTEL_EXPERIMENTAL_CONFIG_FILE=/sdk-config.yaml" before calling docker compose up
+      OTEL_EXPERIMENTAL_CONFIG_FILE:
     ports:
-      - "${AD_PORT}"
+      - "8080:8080"
+    volumes:
+      - ./opentelemetry-java-examples-main/javaagent/sdk-config.yaml:/opentelemetry-java-examples-main/javaagent/sdk-config.yaml
+
+    depends_on:
+      - collector
+      - oap
+      - banyandb
+    networks:
+      - skywalking-net
+  collector:
+    image: otel/opentelemetry-collector-contrib:0.131.1@sha256:c06aa6d7833e9a2b81c6c394d67e40ae9864edec8dca8a8e8552df1316c96d9b
+    volumes:
+      - ./opentelemetry-java-examples-main/javaagent/collector-config.yaml:/opentelemetry-java-examples-main/javaagent/collector-config.yaml
+    command: ["--config=/collector-config.yaml"]
+    expose:
+      - "4318"
+    ports:
+      - "4318:4318"
+    depends_on:
+      - oap
     networks:
       - skywalking-net
 
